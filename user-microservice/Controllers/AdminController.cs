@@ -33,21 +33,25 @@ namespace user_microservice.Controllers
         [HttpGet("users")]
         public async Task<ActionResult<IReadOnlyList<UserListItemDto>>> GetUsers()
         {
-            var users = _userManager.Users.ToList();
-            var list = new List<UserListItemDto>(users.Count);
+            var users = _userManager.Users.ToList();  // Pobieramy użytkowników (wciąż może być null lub pusta lista)
+            if (users == null || users.Count == 0)
+            {
+                return Ok(new List<UserListItemDto>());
+            }
 
+            var list = new List<UserListItemDto>(users.Count);
             foreach (var u in users)
             {
                 var roles = await _userManager.GetRolesAsync(u);
+                var rolesList = roles?.OrderBy(r => r).ToList() ?? new List<string>();  // Sprawdzamy null dla ról
                 list.Add(new UserListItemDto
                 {
                     Id = u.Id,
                     Email = u.Email ?? string.Empty,
                     Username = u.UserName ?? string.Empty,
-                    Roles = roles.OrderBy(r => r).ToList()
+                    Roles = rolesList  // Teraz używamy rolesList
                 });
             }
-
             return Ok(list);
         }
 

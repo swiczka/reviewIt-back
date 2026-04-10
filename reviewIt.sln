@@ -13,6 +13,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Elementy rozwiązania", "El
 		docker-compose.yml = docker-compose.yml
 	EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReviewMicroservice.Tests", "ReviewMicroservice.Tests\ReviewMicroservice.Tests.csproj", "{1D30EB68-5019-F9D2-F4CB-032029F1427B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UserMicroservice.Tests", "UserMicroservice.Tests\UserMicroservice.Tests.csproj", "{F83A3DDF-C1E0-7E10-27D9-3C2F6B1A6269}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +31,14 @@ Global
 		{17037612-1678-46A4-B83B-D5987E9B7C97}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{17037612-1678-46A4-B83B-D5987E9B7C97}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{17037612-1678-46A4-B83B-D5987E9B7C97}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1D30EB68-5019-F9D2-F4CB-032029F1427B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1D30EB68-5019-F9D2-F4CB-032029F1427B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1D30EB68-5019-F9D2-F4CB-032029F1427B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1D30EB68-5019-F9D2-F4CB-032029F1427B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F83A3DDF-C1E0-7E10-27D9-3C2F6B1A6269}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F83A3DDF-C1E0-7E10-27D9-3C2F6B1A6269}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F83A3DDF-C1E0-7E10-27D9-3C2F6B1A6269}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F83A3DDF-C1E0-7E10-27D9-3C2F6B1A6269}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

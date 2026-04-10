@@ -27,9 +27,9 @@ namespace user_microservice.Controllers
             UserManager<AppUser> userManager,
             ITokenService tokenService)
         {
-            _configuration = configuration;
-            _userManager = userManager;
-            _tokenService = tokenService;
+            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
+            _tokenService = tokenService ?? throw new ArgumentNullException(nameof(tokenService));
             _refreshTokenExpirationInDays = _configuration.GetValue<int>("RefreshToken:ExpirationInDays", 7);
         }
 
