@@ -59,6 +59,33 @@ namespace user_microservice.Tests
         /// Ustawia HttpContext kontrolera z podanym userId w claimsach
         /// oraz opcjonalnie flagą IsAuthenticated.
         /// </summary>
+        /// 
+        private void SetupHttpContextWithCookie(string? userId, string? refreshCookieValue, bool isAuthenticated = false)
+        {
+            var claims = new List<Claim>();
+            if (userId != null)
+                claims.Add(new Claim(ClaimTypes.NameIdentifier, userId));
+
+            // Kluczowa zmiana: authenticationType tylko gdy isAuthenticated = true
+            var identity = new ClaimsIdentity(
+                claims,
+                isAuthenticated ? "TestAuth" : null);
+
+            var principal = new ClaimsPrincipal(identity);
+
+            var httpContext = new DefaultHttpContext();
+            httpContext.User = principal;
+
+            if (refreshCookieValue != null)
+                httpContext.Request.Headers["Cookie"] = $"refreshToken={refreshCookieValue}";
+
+            httpContext.Response.Body = new System.IO.MemoryStream();
+
+            _controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = httpContext
+            };
+        }
         private void SetupHttpContext(string? userId = null, bool isAuthenticated = false)
         {
             var claims = new List<Claim>();
@@ -382,33 +409,43 @@ namespace user_microservice.Tests
         [Fact]
         public async Task Login_ReturnsOk_WithTokenAndRoles_WhenCredentialsAreValid()
         {
-            SetupHttpContextWithCookie(userId: null, refreshCookieValue: null);
+            // Ustawienie kontekstu HTTP (brak ciasteczka refreshToken)
+            SetupHttpContextWithCookie(userId: null, refreshCookieValue: null, isAuthenticated: false);
 
+            // Mockowanie użytkownika
             var user = new AppUser { Id = "5", Email = "valid@example.com", UserName = "valid" };
 
-            _mockUserManager.Setup(m => m.FindByEmailAsync("valid@example.com")).ReturnsAsync(user);
-            _mockUserManager.Setup(m => m.CheckPasswordAsync(user, "Passw0rd!")).ReturnsAsync(true);
+            // Mockowanie metod UserManager
+            _mockUserManager.Setup(m => m.FindByEmailAsync("valid@example.com")).ReturnsAsync(user); // Sprawdzamy użytkownika po e-mailu
+            _mockUserManager.Setup(m => m.CheckPasswordAsync(user, "Passw0rd!")).ReturnsAsync(true); // Hasło jest poprawne
             _mockUserManager
                 .Setup(m => m.GetRolesAsync(user))
-                .ReturnsAsync(new List<string> { "User" });
+                .ReturnsAsync(new List<string> { "User" }); // Użytkownik ma rolę "User"
+
+            // Mockowanie metody UpdateAsync
             _mockUserManager
                 .Setup(m => m.UpdateAsync(It.IsAny<AppUser>()))
                 .ReturnsAsync(IdentityResult.Success);
 
+            // Mockowanie TokenService
             _mockTokenService.Setup(t => t.CreateToken(user)).ReturnsAsync("jwt-token");
             _mockTokenService.Setup(t => t.CreateRefreshToken()).Returns("refresh-token");
 
+            // Wykonanie akcji logowania
             var result = await _controller.Login(new LoginInputDto
             {
-                Email = "valid@example.com",
-                Password = "Passw0rd!"
+                Email = "valid@example.com", // Adres email użytkownika
+                Password = "Passw0rd!" // Poprawne hasło
             });
 
-            var ok = Assert.IsType<OkObjectResult>(result.Result);
+            // Assert: Sprawdzamy, czy wynik jest typu OkObjectResult
+            var ok = Assert.IsType<OkObjectResult>(result.Result);  // Oczekujemy OkObjectResult
+
+            // Sprawdzamy, czy zwrócony obiekt to AuthResponseDto
             var dto = Assert.IsType<AuthResponseDto>(ok.Value);
-            Assert.Equal("jwt-token", dto.Token);
-            Assert.Equal("5", dto.Id);
-            Assert.Contains("User", dto.Roles);
+            Assert.Equal("jwt-token", dto.Token); // Sprawdzamy token
+            Assert.Equal("5", dto.Id); // Sprawdzamy id użytkownika
+            Assert.Contains("User", dto.Roles); // Sprawdzamy, czy użytkownik ma rolę "User"
         }
 
         // ─────────────────────────────────────────────────────────────
