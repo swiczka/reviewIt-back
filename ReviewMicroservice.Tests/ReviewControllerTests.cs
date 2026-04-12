@@ -1,12 +1,13 @@
-﻿using Moq;
-using Xunit;
+﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Http;
-using System.Security.Claims;
+using Moq;
 using review_microservice.Controllers;
 using review_microservice.Dtos;
 using review_microservice.Interfaces;
 using review_microservice.Models;
+using review_microservice.Validators;
+using System.Security.Claims;
+using Xunit;
 
 namespace ReviewMicroservice.Tests
 {
@@ -18,7 +19,13 @@ namespace ReviewMicroservice.Tests
         public ReviewControllerTests()
         {
             _mockReviewRepo = new Mock<IReviewRepository>();
-            _controller = new ReviewController(_mockReviewRepo.Object);
+
+            
+            var reviewValidator = new ReviewValidator();
+
+            _controller = new ReviewController(
+                _mockReviewRepo.Object,
+                reviewValidator);           // ← nowy parametr
         }
 
         // ─────────────────────────────────────────────────────────────

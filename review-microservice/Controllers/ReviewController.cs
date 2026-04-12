@@ -3,8 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using review_microservice.Dtos;
 using review_microservice.Interfaces;
 using review_microservice.Models;
-
-using review_microservice;
+using review_microservice.Validators;
 
 namespace review_microservice.Controllers
 {
@@ -14,10 +13,12 @@ namespace review_microservice.Controllers
     public class ReviewController : ControllerBase
     {
         private readonly IReviewRepository _reviewRepository;
+        private readonly ReviewValidator _reviewValidator;
 
-        public ReviewController(IReviewRepository repository)
+        public ReviewController(IReviewRepository repository, ReviewValidator reviewValidator)
         {
             _reviewRepository = repository;
+            _reviewValidator = reviewValidator;
         }
 
         [AllowAnonymous]
@@ -48,7 +49,7 @@ namespace review_microservice.Controllers
 
             if (review != null)
             {
-                var reviewDto = new ReviewReadDto
+                return Ok(new ReviewReadDto
                 {
                     AlbumId = review.AlbumId,
                     AppUserId = review.AppUserId,
@@ -57,10 +58,10 @@ namespace review_microservice.Controllers
                     Id = review.Id,
                     Title = review.Title,
                     Value = review.Value
-                };
-                return Ok(reviewDto);
+                });
             }
-            else return NotFound();
+
+            return NotFound();
         }
 
         [HttpPost]
@@ -68,10 +69,15 @@ namespace review_microservice.Controllers
         {
             var callerId = JwtUserClaims.GetUserId(User);
             if (callerId == null || dto.AppUserId != callerId)
-            {
                 return Forbid("You can only create reviews for yourself.");
-            }
-            var review = new Review()
+
+            // ── Walidacja biznesowa ────────────────────────────────
+            var validation = _reviewValidator.ValidateCreate(dto);
+            if (!validation.IsValid)
+                return BadRequest(new { errors = validation.Errors });
+            // ──────────────────────────────────────────────────────
+
+            var review = new Review
             {
                 Title = dto.Title,
                 Value = dto.Value,
@@ -82,22 +88,21 @@ namespace review_microservice.Controllers
             };
 
             var success = await _reviewRepository.AddAsync(review);
+            if (!success)
+                return BadRequest();
 
-            if (success)
+            var reviewRead = new ReviewReadDto
             {
-                var reviewRead = new ReviewReadDto()
-                {
-                    AlbumId = review.AlbumId,
-                    AppUserId = review.AppUserId,
-                    Content = review.Content,
-                    CreatedAt = review.CreatedAt,
-                    Id = review.Id,
-                    Title = review.Title,
-                    Value = review.Value
-                };
-                return CreatedAtRoute(nameof(GetReviewById), new { id = reviewRead.Id }, reviewRead);
-            }
-            else return BadRequest();
+                AlbumId = review.AlbumId,
+                AppUserId = review.AppUserId,
+                Content = review.Content,
+                CreatedAt = review.CreatedAt,
+                Id = review.Id,
+                Title = review.Title,
+                Value = review.Value
+            };
+
+            return CreatedAtRoute(nameof(GetReviewById), new { id = reviewRead.Id }, reviewRead);
         }
 
         [HttpPut("{id}")]
@@ -105,28 +110,31 @@ namespace review_microservice.Controllers
         {
             var review = await _reviewRepository.GetByIdAsync(id);
             if (review == null)
-            {
                 return NotFound($"Review with id {id} not found.");
-            }
 
             var callerId = JwtUserClaims.GetUserId(User);
             if (review.AppUserId != dto.AppUserId || callerId != review.AppUserId)
-            {
                 return Forbid("You can only update your own reviews.");
-            }
 
-            //co jak użytkownik usunie treść i tytuł, ale zostawi ocenę?
-            //mogą być komentarze więc nie można zaaktaulizować w ten sposób
-            bool isRatingOnly = String.IsNullOrWhiteSpace(review.Title) && String.IsNullOrWhiteSpace(review.Content);
-            bool updateHasEmptyContent = String.IsNullOrWhiteSpace(dto.Title) || String.IsNullOrWhiteSpace(dto.Content);
-            if(isRatingOnly && updateHasEmptyContent)
+            // ── Walidacja biznesowa ────────────────────────────────
+            var validation = _reviewValidator.ValidateUpdate(dto);
+            if (!validation.IsValid)
+                return BadRequest(new { errors = validation.Errors });
+            // ──────────────────────────────────────────────────────
+
+            bool isRatingOnly = string.IsNullOrWhiteSpace(review.Title)
+                             && string.IsNullOrWhiteSpace(review.Content);
+            bool updateHasEmptyContent = string.IsNullOrWhiteSpace(dto.Title)
+                                      || string.IsNullOrWhiteSpace(dto.Content);
+
+            if (isRatingOnly && updateHasEmptyContent)
             {
                 review.Value = dto.Value;
             }
             else if (!isRatingOnly && updateHasEmptyContent)
             {
                 return BadRequest("Cannot update review with empty title and content. " +
-                      "If you want to update only the rating, please provide the existing title and content.");
+                    "If you want to update only the rating, please provide the existing title and content.");
             }
             else
             {
@@ -137,10 +145,9 @@ namespace review_microservice.Controllers
 
             var success = await _reviewRepository.UpdateAsync(review);
             if (success)
-            {
                 return NoContent();
-            }
-            else return BadRequest($"Unable to update review with id {id}");
+
+            return BadRequest($"Unable to update review with id {id}");
         }
     }
 }

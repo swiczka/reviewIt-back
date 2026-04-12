@@ -9,6 +9,7 @@ using user_microservice.Data;
 using user_microservice.Dtos;
 using user_microservice.Interfaces;
 using user_microservice.Models;
+using user_microservice.Validators;
 using System.Linq;
 
 namespace user_microservice.Controllers
@@ -20,52 +21,48 @@ namespace user_microservice.Controllers
         private readonly IConfiguration _configuration;
         private readonly UserManager<AppUser> _userManager;
         private readonly ITokenService _tokenService;
+        private readonly RegisterValidator _registerValidator;
         private readonly int _refreshTokenExpirationInDays;
 
         public AuthController(
             IConfiguration configuration,
             UserManager<AppUser> userManager,
-            ITokenService tokenService)
+            ITokenService tokenService,
+            RegisterValidator registerValidator)
         {
-            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
-            _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
-            _tokenService = tokenService ?? throw new ArgumentNullException(nameof(tokenService));
+            _configuration = configuration;
+            _userManager = userManager;
+            _tokenService = tokenService;
+            _registerValidator = registerValidator;
             _refreshTokenExpirationInDays = _configuration.GetValue<int>("RefreshToken:ExpirationInDays", 7);
         }
 
         private CookieOptions GetRefreshTokenCookieOptions()
         {
-            var cookieOptions = new CookieOptions
+            return new CookieOptions
             {
                 HttpOnly = true,
                 Expires = DateTime.UtcNow.AddDays(_refreshTokenExpirationInDays),
-                SameSite = SameSiteMode.Lax, // pozwala na działanie między localhostami
-                Secure = false // z https musi być true
+                SameSite = SameSiteMode.Lax,
+                Secure = false
             };
-
-            return cookieOptions;
         }
 
         [HttpGet("{id}")]
         public async Task<ActionResult<AppUserReadDto>> GetUserById(string id)
         {
             var user = await _userManager.FindByIdAsync(id);
-
             if (user == null)
-            {
                 return NotFound("User not found.");
-            }
 
             var roles = await _userManager.GetRolesAsync(user);
-            var userDto = new AppUserReadDto
+            return Ok(new AppUserReadDto
             {
                 Id = user.Id,
                 Username = user.UserName!,
                 Email = user.Email,
                 Roles = roles.OrderBy(r => r).ToList()
-            };
-
-            return Ok(userDto);
+            });
         }
 
         [Authorize]
@@ -73,19 +70,13 @@ namespace user_microservice.Controllers
         public async Task<ActionResult<AppUserReadDto>> GetMe()
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                         ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
-
+                      ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
             if (userId == null)
-            {
                 return Unauthorized("Invalid token.");
-            }
 
             var user = await _userManager.FindByIdAsync(userId);
-
             if (user == null)
-            {
                 return NotFound("User not found.");
-            }
 
             var meRoles = await _userManager.GetRolesAsync(user);
             return Ok(new AppUserReadDto
@@ -102,14 +93,10 @@ namespace user_microservice.Controllers
         public async Task<ActionResult<AuthResponseDto>> RefreshToken([FromBody] RefreshTokenDto dto)
         {
             var rawToken = dto.Token;
-
             if (string.IsNullOrEmpty(rawToken))
-            {
                 return BadRequest("Token is required.");
-            }
 
-            ClaimsPrincipal principal = null;
-
+            ClaimsPrincipal principal;
             try
             {
                 principal = _tokenService.GetPrincipalFromExpiredToken(rawToken);
@@ -120,28 +107,20 @@ namespace user_microservice.Controllers
             }
 
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
-              ?? principal.FindFirstValue(JwtRegisteredClaimNames.Sub);
-
+                      ?? principal.FindFirstValue(JwtRegisteredClaimNames.Sub);
             if (userId == null)
                 return Unauthorized();
-            
-            var user = await _userManager.FindByIdAsync(userId);
 
+            var user = await _userManager.FindByIdAsync(userId);
             if (user == null)
-            {
                 return NotFound();
-            }
 
             var rToken = Request.Cookies["refreshToken"];
-
-            if(rToken == null || user.RefreshToken != rToken || user.RefreshTokenExpiryTime < DateTime.UtcNow)
-            {
+            if (rToken == null || user.RefreshToken != rToken || user.RefreshTokenExpiryTime < DateTime.UtcNow)
                 return Unauthorized();
-            }
 
             var newJwtToken = await _tokenService.CreateToken(user);
             string newRefreshToken = _tokenService.CreateRefreshToken();
-
             user.RefreshToken = newRefreshToken;
             user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(_refreshTokenExpirationInDays);
             await _userManager.UpdateAsync(user);
@@ -163,37 +142,28 @@ namespace user_microservice.Controllers
         public async Task<ActionResult<AuthResponseDto>> Register([FromBody] RegisterInputDto model)
         {
             if (User.Identity?.IsAuthenticated == true)
-            {
                 return BadRequest("You are already logged in.");
-            }
+
+            // ── Walidacja biznesowa ────────────────────────────────
+            var validation = _registerValidator.Validate(model);
+            if (!validation.IsValid)
+                return BadRequest(new { errors = validation.Errors });
+            // ──────────────────────────────────────────────────────
 
             var existingUserByEmail = await _userManager.FindByEmailAsync(model.Email);
             if (existingUserByEmail != null)
-            {
                 return BadRequest("Email already exists.");
-            }
 
             var existingUserByUsername = await _userManager.FindByNameAsync(model.Username);
             if (existingUserByUsername != null)
-            {
                 return BadRequest("Username already exists.");
-            }
 
-            var user = new AppUser
-            {
-                UserName = model.Username,
-                Email = model.Email
-            };
-
+            var user = new AppUser { UserName = model.Username, Email = model.Email };
             var result = await _userManager.CreateAsync(user, model.Password);
-
             if (!result.Succeeded)
-            {
                 return BadRequest(result.Errors);
-            }
 
             await _userManager.AddToRoleAsync(user, UserRoles.User);
-
             return Ok(new AuthResponseDto
             {
                 Id = user.Id,
@@ -207,23 +177,15 @@ namespace user_microservice.Controllers
         public async Task<ActionResult<AuthResponseDto>> Login([FromBody] LoginInputDto model)
         {
             if (User.Identity?.IsAuthenticated == true)
-            {
                 return BadRequest("You are already logged in.");
-            }
 
             var user = await _userManager.FindByEmailAsync(model.Email);
-
             if (user == null)
-            {
                 return Unauthorized("Invalid email or password.");
-            }
 
             var isPasswordValid = await _userManager.CheckPasswordAsync(user, model.Password);
-
             if (!isPasswordValid)
-            {
                 return Unauthorized("Invalid email or password.");
-            }
 
             try
             {
@@ -235,10 +197,7 @@ namespace user_microservice.Controllers
                 user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(refreshTokenExpirationInDays);
                 await _userManager.UpdateAsync(user);
 
-
-                var cookieOptions = GetRefreshTokenCookieOptions();
-
-                Response.Cookies.Append("refreshToken", refreshToken, cookieOptions);
+                Response.Cookies.Append("refreshToken", refreshToken, GetRefreshTokenCookieOptions());
 
                 var loginRoles = await _userManager.GetRolesAsync(user);
                 return Ok(new AuthResponseDto
@@ -256,10 +215,6 @@ namespace user_microservice.Controllers
             }
         }
 
-        /// <summary>
-        /// Zwraca mapę id użytkownika → nazwa (UserName) dla podanych identyfikatorów.
-        /// Używane przez frontend do wyświetlania nicków przy danych z review API (same id).
-        /// </summary>
         [AllowAnonymous]
         [HttpPost("users/resolve-names")]
         public async Task<ActionResult<Dictionary<string, string>>> ResolveUserNames(
@@ -267,9 +222,7 @@ namespace user_microservice.Controllers
         {
             var raw = dto.UserIds;
             if (raw == null || raw.Count == 0)
-            {
                 return Ok(new Dictionary<string, string>());
-            }
 
             var distinct = raw
                 .Where(id => !string.IsNullOrWhiteSpace(id))
@@ -283,9 +236,7 @@ namespace user_microservice.Controllers
             {
                 var u = await _userManager.FindByIdAsync(id);
                 if (u != null && !string.IsNullOrEmpty(u.UserName))
-                {
                     result[id] = u.UserName;
-                }
             }
 
             return Ok(result);

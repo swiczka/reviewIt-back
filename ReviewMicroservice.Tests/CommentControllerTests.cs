@@ -5,6 +5,7 @@ using review_microservice.Controllers;
 using review_microservice.Dtos;
 using review_microservice.Interfaces;
 using review_microservice.Models;
+using review_microservice.Validators;
 using System.Security.Claims;
 using System.Xml.Linq;
 using Xunit;
@@ -21,7 +22,14 @@ namespace ReviewMicroservice.Tests
         {
             _mockCommentRepo = new Mock<ICommentRepository>();
             _mockReviewRepo = new Mock<IReviewRepository>();
-            _controller = new CommentController(_mockCommentRepo.Object, _mockReviewRepo.Object);
+
+            
+            var commentValidator = new CommentValidator();
+
+            _controller = new CommentController(
+                _mockCommentRepo.Object,
+                _mockReviewRepo.Object,
+                commentValidator);          
         }
 
         // ─────────────────────────────────────────────────────────────

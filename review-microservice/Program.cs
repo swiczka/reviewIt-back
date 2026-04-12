@@ -1,154 +1,77 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
+using System.Text;
 using review_microservice.Data;
 using review_microservice.Interfaces;
 using review_microservice.Repositories;
 using review_microservice.Services;
-using System.Security.Claims;
-using System.Text;
-using System.Text.Json;
-
-
+using review_microservice.Validators;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 
-builder.Services.AddSwaggerGen(options =>
+// ── Baza danych ────────────────────────────────────────────────────
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// ── JWT (weryfikacja tokenów wystawionych przez user-microservice) ─
+builder.Services.AddAuthentication(options =>
 {
-    options.SwaggerDoc("v1", new OpenApiInfo
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
     {
-        Title = "review-microservice",
-        Version = "v1"
-    });
-
-    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Description = "Enter JWT token. Example: Bearer {your token}",
-        Name = "Authorization",
-        In = ParameterLocation.Header,
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT"
-    });
-
-    options.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
-    });
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
+    };
 });
 
-builder.Services.AddDbContext<AppDbContext>(opt =>
-{
-    opt.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"),
-        sqlServerOptionsAction: sqlOptions =>
-        {
-            sqlOptions.EnableRetryOnFailure(
-                maxRetryCount: 5,
-                maxRetryDelay: TimeSpan.FromSeconds(30),
-                errorNumbersToAdd: null);
-        });
-});
-
+// ── Repozytoria ────────────────────────────────────────────────────
 builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
 builder.Services.AddScoped<ICommentRepository, CommentRepository>();
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.RequireHttpsMetadata = false;
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!)),
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"],
-            ValidAudience = builder.Configuration["Jwt:Audience"],
-            RoleClaimType = ClaimTypes.Role,
-            NameClaimType = System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub
-        };
+// ── Serwisy zewnętrzne ─────────────────────────────────────────────
+builder.Services.AddScoped<IDiscogsService, DiscogsService>();
+builder.Services.AddHttpClient<IDiscogsService, DiscogsService>();
 
-        options.Events = new JwtBearerEvents
-        {
-            OnChallenge = async context =>
-            {
-                context.HandleResponse();
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                context.Response.ContentType = "application/json; charset=utf-8";
-                var payload = new
-                {
-                    title = "Unauthorized",
-                    detail = "Brak ważnego tokenu lub sesja wygasła. Zaloguj się ponownie.",
-                    status = 401
-                };
-                await context.Response.WriteAsync(JsonSerializer.Serialize(payload));
-            }
-        };
-    });
+// ── Walidatory ─────────────────────────────────────────────────────
+builder.Services.AddScoped<ReviewValidator>();
+builder.Services.AddScoped<CommentValidator>();
 
-builder.Services.AddAuthorization();
-
-builder.Services.AddHttpClient<IDiscogsService, DiscogsService>((serviceProvider, client) =>
+// ── CORS ───────────────────────────────────────────────────────────
+builder.Services.AddCors(options =>
 {
-    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
-
-    var baseUrl = configuration["Discogs:BaseUrl"] ?? "https://api.discogs.com";
-    var userAgent = configuration["Discogs:UserAgent"]?.Trim();
-    if (string.IsNullOrEmpty(userAgent))
-    {
-        userAgent = "ReviewIT/1.0 (+https://github.com)";
-    }
-
-    client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
-    client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", userAgent);
+    options.AddPolicy("AllowAll", policy =>
+        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 });
 
 var app = builder.Build();
-
-//if (args.Length != 0 && args[0].Contains("seeddata"))
-//{
-//    Seed.SeedData(app);
-//}
 
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+
+    using var scope = app.Services.CreateScope();
+    Seed.SeedData(app);
 }
 
-app.UseHttpsRedirection();
+app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-
-using (var scope = app.Services.CreateScope())
-{
-    var services = scope.ServiceProvider;
-    try
-    {
-        var context = services.GetRequiredService<AppDbContext>();
-        context.Database.Migrate();
-        Seed.SeedData(app);
-    }
-    catch (Exception ex)
-    {
-        var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "Error during database migration or data insertion");
-    }
-}
 
 app.Run();
