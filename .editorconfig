@@ -1,0 +1,6 @@
+root = true
+
+# Migracje EF Core są generowane automatycznie - nazwy klas pochodzą od nazw migracji
+[**/Migrations/*.cs]
+generated_code = true
+dotnet_diagnostic.CS8981.severity = none
