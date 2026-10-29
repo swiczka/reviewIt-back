@@ -153,11 +153,9 @@ else
 {
     app.UseExceptionHandler("/error");
     app.UseHsts();
+    app.UseHttpsRedirection();
 }
 
-
-
-app.UseHttpsRedirection();
 app.UseCors("VuePolicy");
 app.UseAuthentication();
 app.UseAuthorization();
