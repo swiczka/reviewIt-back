@@ -19,6 +19,7 @@ namespace user_microservice.Controllers
     {
         private readonly IConfiguration _configuration;
         private readonly UserManager<AppUser> _userManager;
+        private readonly SignInManager<AppUser> _signInManager;
         private readonly ITokenService _tokenService;
         private readonly ILogger<AuthController> _logger;
         private readonly int _refreshTokenExpirationInDays;
@@ -26,11 +27,13 @@ namespace user_microservice.Controllers
         public AuthController(
             IConfiguration configuration,
             UserManager<AppUser> userManager,
+            SignInManager<AppUser> signInManager,
             ITokenService tokenService,
             ILogger<AuthController> logger)
         {
             _configuration = configuration;
             _userManager = userManager;
+            _signInManager = signInManager;
             _tokenService = tokenService;
             _logger = logger;
             _refreshTokenExpirationInDays = _configuration.GetValue<int>("RefreshToken:ExpirationInDays", 7);
@@ -53,6 +56,7 @@ namespace user_microservice.Controllers
         }
 
         [HttpGet("{id}")]
+        [Authorize(Roles = UserRoles.Admin + "," + UserRoles.Moderator)]
         public async Task<ActionResult<AppUserReadDto>> GetUserById(string id)
         {
             var user = await _userManager.FindByIdAsync(id);
@@ -113,6 +117,21 @@ namespace user_microservice.Controllers
             if (user == null)
             {
                 return NotFound("User not found.");
+            }
+
+            var callerId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                           ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+            if (callerId == user.Id)
+            {
+                return BadRequest("You cannot change your own ban status.");
+            }
+
+            // Admina nie banuje nikt; moderatora tylko admin
+            var targetRoles = await _userManager.GetRolesAsync(user);
+            if (targetRoles.Contains(UserRoles.Admin) ||
+                (targetRoles.Contains(UserRoles.Moderator) && !User.IsInRole(UserRoles.Admin)))
+            {
+                return Forbid();
             }
 
             user.IsBanned = dto.ShouldBeBanned;
@@ -246,9 +265,16 @@ namespace user_microservice.Controllers
                 return Unauthorized("Invalid email or password.");
             }
 
-            var isPasswordValid = await _userManager.CheckPasswordAsync(user, model.Password);
+            // CheckPasswordSignInAsync (w przeciwieństwie do UserManager.CheckPasswordAsync) liczy nieudane próby i blokuje konto
+            var signInResult = await _signInManager.CheckPasswordSignInAsync(user, model.Password, lockoutOnFailure: true);
 
-            if (!isPasswordValid)
+            if (signInResult.IsLockedOut)
+            {
+                return StatusCode(StatusCodes.Status429TooManyRequests,
+                    "Account temporarily locked due to too many failed login attempts. Try again later.");
+            }
+
+            if (!signInResult.Succeeded)
             {
                 return Unauthorized("Invalid email or password.");
             }

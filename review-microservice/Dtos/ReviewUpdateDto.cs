@@ -14,9 +14,5 @@ namespace review_microservice.Dtos
 
         [MaxLength(10000, ErrorMessage = "Content is too long. Use up to 10000 characters.")]
         public string? Content { get; set; }
-
-        [Required(ErrorMessage = "AppUserId is required.")]
-        [StringLength(36, ErrorMessage = "Incorrect AppUserId.")]
-        public string AppUserId { get; set; }
     }
 }

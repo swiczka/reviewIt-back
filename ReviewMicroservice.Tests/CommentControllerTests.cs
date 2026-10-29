@@ -172,7 +172,7 @@ namespace ReviewMicroservice.Tests
             SetupUser("user-1");
             _mockReviewRepo.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Review)null!);
 
-            var dto = new CommentCreateDto { Content = "tekst", AppUserId = "user-1", ReviewId = 99 };
+            var dto = new CommentCreateDto { Content = "tekst", ReviewId = 99 };
 
             var result = await _controller.CreateComment(dto);
 
@@ -181,17 +181,17 @@ namespace ReviewMicroservice.Tests
         }
 
         [Fact]
-        public async Task CreateComment_ReturnsForbid_WhenCallerIdDoesNotMatchDto()
+        public async Task CreateComment_SavesCommentForCallerFromToken()
         {
-            SetupUser("user-2"); // zalogowany jako user-2
+            SetupUser("user-2");
             _mockReviewRepo.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(MakeReview());
+            _mockCommentRepo.Setup(c => c.AddAsync(It.IsAny<Comment>())).ReturnsAsync(true);
 
-            // Dto twierdzi, że komentarz należy do user-1
-            var dto = new CommentCreateDto { Content = "tekst", AppUserId = "user-1", ReviewId = 1 };
+            var dto = new CommentCreateDto { Content = "tekst", ReviewId = 1 };
 
-            var result = await _controller.CreateComment(dto);
+            await _controller.CreateComment(dto);
 
-            Assert.IsType<ForbidResult>(result.Result);
+            _mockCommentRepo.Verify(c => c.AddAsync(It.Is<Comment>(x => x.AppUserId == "user-2")), Times.Once);
         }
 
         [Fact]
@@ -200,7 +200,7 @@ namespace ReviewMicroservice.Tests
             SetupUser(userId: null);
             _mockReviewRepo.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(MakeReview());
 
-            var dto = new CommentCreateDto { Content = "tekst", AppUserId = "user-1", ReviewId = 1 };
+            var dto = new CommentCreateDto { Content = "tekst", ReviewId = 1 };
 
             var result = await _controller.CreateComment(dto);
 
@@ -214,7 +214,7 @@ namespace ReviewMicroservice.Tests
             _mockReviewRepo.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(MakeReview());
             _mockCommentRepo.Setup(c => c.AddAsync(It.IsAny<Comment>())).ReturnsAsync(false);
 
-            var dto = new CommentCreateDto { Content = "tekst", AppUserId = "user-1", ReviewId = 1 };
+            var dto = new CommentCreateDto { Content = "tekst", ReviewId = 1 };
 
             var result = await _controller.CreateComment(dto);
 
@@ -228,7 +228,7 @@ namespace ReviewMicroservice.Tests
             _mockReviewRepo.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(MakeReview());
             _mockCommentRepo.Setup(c => c.AddAsync(It.IsAny<Comment>())).ReturnsAsync(true);
 
-            var dto = new CommentCreateDto { Content = "Nowy komentarz", AppUserId = "user-1", ReviewId = 1 };
+            var dto = new CommentCreateDto { Content = "Nowy komentarz", ReviewId = 1 };
 
             var result = await _controller.CreateComment(dto);
 
