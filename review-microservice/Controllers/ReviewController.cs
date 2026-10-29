@@ -70,7 +70,8 @@ namespace review_microservice.Controllers
             var callerId = JwtUserClaims.GetUserId(User);
             if (callerId == null || dto.AppUserId != callerId)
             {
-                return Forbid("You can only create reviews for yourself.");
+                
+                return Forbid();
             }
 
             if (await _reviewRepository.UserHasReviewForAlbum(dto.AppUserId, dto.AlbumId))
