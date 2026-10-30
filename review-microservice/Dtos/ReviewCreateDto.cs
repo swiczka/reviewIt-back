@@ -19,9 +19,5 @@ namespace review_microservice.Dtos
 
         [Required(ErrorMessage = "AlbumId is required.")]
         public int AlbumId { get; set; }
-
-        [Required(ErrorMessage = "AppUserId is required.")]
-        [StringLength(36, ErrorMessage = "Incorrect AppUserId.")]
-        public string AppUserId { get; set; }
     }
 }

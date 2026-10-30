@@ -68,13 +68,12 @@ namespace review_microservice.Controllers
         public async Task<ActionResult<ReviewReadDto>> CreateReview([FromBody] ReviewCreateDto dto)
         {
             var callerId = JwtUserClaims.GetUserId(User);
-            if (callerId == null || dto.AppUserId != callerId)
+            if (callerId == null)
             {
-                
                 return Forbid();
             }
 
-            if (await _reviewRepository.UserHasReviewForAlbum(dto.AppUserId, dto.AlbumId))
+            if (await _reviewRepository.UserHasReviewForAlbum(callerId, dto.AlbumId))
             {
                 return BadRequest("You have already submitted a review for this album.");
             }
@@ -86,7 +85,7 @@ namespace review_microservice.Controllers
                 AlbumId = dto.AlbumId,
                 Content = dto.Content,
                 CreatedAt = DateTime.UtcNow,
-                AppUserId = dto.AppUserId
+                AppUserId = callerId
             };
 
             var success = await _reviewRepository.AddAsync(review);
@@ -119,9 +118,9 @@ namespace review_microservice.Controllers
             }
 
             var callerId = JwtUserClaims.GetUserId(User);
-            if (review.AppUserId != dto.AppUserId || callerId != review.AppUserId)
+            if (review.AppUserId != callerId)
             {
-                return Forbid("You can only update your own reviews.");
+                return Forbid();
             }
 
             //co jak użytkownik usunie treść i tytuł, ale zostawi ocenę?

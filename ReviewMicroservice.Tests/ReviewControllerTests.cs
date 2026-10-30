@@ -138,7 +138,6 @@ namespace ReviewMicroservice.Tests
 
             var dto = new ReviewCreateDto
             {
-                AppUserId = "user-1",
                 Value = 8,
                 AlbumId = 100,
                 Title = "T",
@@ -151,20 +150,16 @@ namespace ReviewMicroservice.Tests
         }
 
         [Fact]
-        public async Task CreateReview_ReturnsForbid_WhenCallerIdDoesNotMatchDto()
+        public async Task CreateReview_SavesReviewForCallerFromToken()
         {
-            SetupUser("user-2"); // zalogowany jako user-2
+            SetupUser("user-2");
+            _mockReviewRepo.Setup(r => r.AddAsync(It.IsAny<Review>())).ReturnsAsync(true);
 
-            var dto = new ReviewCreateDto
-            {
-                AppUserId = "user-1",
-                Value = 8,
-                AlbumId = 100 // próbuje stworzyć dla user-1
-            };
+            var dto = new ReviewCreateDto { Value = 8, AlbumId = 100 };
 
-            var result = await _controller.CreateReview(dto);
+            await _controller.CreateReview(dto);
 
-            Assert.IsType<ForbidResult>(result.Result);
+            _mockReviewRepo.Verify(r => r.AddAsync(It.Is<Review>(x => x.AppUserId == "user-2")), Times.Once);
         }
 
         [Fact]
@@ -175,7 +170,6 @@ namespace ReviewMicroservice.Tests
 
             var dto = new ReviewCreateDto
             {
-                AppUserId = "user-1",
                 Value = 7,
                 AlbumId = 100,
                 Title = "T",
@@ -195,7 +189,6 @@ namespace ReviewMicroservice.Tests
 
             var dto = new ReviewCreateDto
             {
-                AppUserId = "user-1",
                 Value = 9,
                 AlbumId = 100,
                 Title = "Świetny album",
@@ -222,7 +215,6 @@ namespace ReviewMicroservice.Tests
 
             var dto = new ReviewCreateDto
             {
-                AppUserId = "user-1",
                 Value = 6,
                 AlbumId = 100,
                 Title = null,
@@ -246,7 +238,7 @@ namespace ReviewMicroservice.Tests
             SetupUser("user-1");
             _mockReviewRepo.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Review)null!);
 
-            var dto = new ReviewUpdateDto { AppUserId = "user-1", Value = 8, Title = "T", Content = "C" };
+            var dto = new ReviewUpdateDto { Value = 8, Title = "T", Content = "C" };
 
             var result = await _controller.UpdateReview(99, dto);
 
@@ -261,22 +253,7 @@ namespace ReviewMicroservice.Tests
             var review = MakeReview(userId: "user-1");
             _mockReviewRepo.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(review);
 
-            var dto = new ReviewUpdateDto { AppUserId = "user-1", Value = 8, Title = "T", Content = "C" };
-
-            var result = await _controller.UpdateReview(1, dto);
-
-            Assert.IsType<ForbidResult>(result);
-        }
-
-        [Fact]
-        public async Task UpdateReview_ReturnsForbid_WhenDtoUserIdDoesNotMatchReviewOwner()
-        {
-            SetupUser("user-1");
-            var review = MakeReview(userId: "user-1");
-            _mockReviewRepo.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(review);
-
-            // dto.AppUserId nie zgadza się z review.AppUserId
-            var dto = new ReviewUpdateDto { AppUserId = "user-99", Value = 8, Title = "T", Content = "C" };
+            var dto = new ReviewUpdateDto { Value = 8, Title = "T", Content = "C" };
 
             var result = await _controller.UpdateReview(1, dto);
 
@@ -293,7 +270,6 @@ namespace ReviewMicroservice.Tests
 
             var dto = new ReviewUpdateDto
             {
-                AppUserId = "user-1",
                 Value = 10,
                 Title = "Nowy tytuł",
                 Content = "Nowa treść"
@@ -314,7 +290,6 @@ namespace ReviewMicroservice.Tests
 
             var dto = new ReviewUpdateDto
             {
-                AppUserId = "user-1",
                 Value = 5,
                 Title = "Nowy",
                 Content = "Nowa treść"
@@ -337,7 +312,6 @@ namespace ReviewMicroservice.Tests
 
             var dto = new ReviewUpdateDto
             {
-                AppUserId = "user-1",
                 Value = 9,
                 Title = null,
                 Content = null
@@ -360,7 +334,6 @@ namespace ReviewMicroservice.Tests
             // Dto nie ma tytułu i treści — to powinno zwrócić BadRequest
             var dto = new ReviewUpdateDto
             {
-                AppUserId = "user-1",
                 Value = 7,
                 Title = null,
                 Content = null
@@ -381,7 +354,6 @@ namespace ReviewMicroservice.Tests
 
             var dto = new ReviewUpdateDto
             {
-                AppUserId = "user-1",
                 Value = 10,
                 Title = "Nowy tytuł",
                 Content = "Nowa treść recenzji"

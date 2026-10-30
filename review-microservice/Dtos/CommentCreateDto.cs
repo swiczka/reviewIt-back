@@ -9,10 +9,6 @@ namespace review_microservice.Dtos
         public string Content { get; set; }
 
 
-        [Required(ErrorMessage = "Comment AppUserId has not been provided.")]
-        public string AppUserId { get; set; }
-
-
         [Required(ErrorMessage = "Comment ReviewId has not been provided.")]
         public int ReviewId { get; set; }
     }

@@ -14,12 +14,14 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
 using System.IdentityModel.Tokens.Jwt;
+using SignInResult = Microsoft.AspNetCore.Identity.SignInResult;
 
 namespace user_microservice.Tests
 {
     public class AuthControllerTests
     {
         private readonly Mock<UserManager<AppUser>> _mockUserManager;
+        private readonly Mock<SignInManager<AppUser>> _mockSignInManager;
         private readonly Mock<ITokenService> _mockTokenService;
         private readonly Mock<IConfiguration> _mockConfiguration;
         private readonly AuthController _controller;
@@ -28,6 +30,13 @@ namespace user_microservice.Tests
         {
             _mockUserManager = new Mock<UserManager<AppUser>>(
                 Mock.Of<IUserStore<AppUser>>(), null, null, null, null, null, null, null, null);
+
+            // SignInManager wymaga niepustych UserManager, IHttpContextAccessor i IUserClaimsPrincipalFactory
+            _mockSignInManager = new Mock<SignInManager<AppUser>>(
+                _mockUserManager.Object,
+                Mock.Of<IHttpContextAccessor>(),
+                Mock.Of<IUserClaimsPrincipalFactory<AppUser>>(),
+                null, null, null, null);
 
             _mockTokenService = new Mock<ITokenService>();
             _mockConfiguration = new Mock<IConfiguration>();
@@ -49,6 +58,7 @@ namespace user_microservice.Tests
             _controller = new AuthController(
                 _mockConfiguration.Object,
                 _mockUserManager.Object,
+                _mockSignInManager.Object,
                 _mockTokenService.Object,
                 NullLogger<AuthController>.Instance);
         }
@@ -394,9 +404,9 @@ namespace user_microservice.Tests
 
             var user = new AppUser { Id = "1", Email = "u@example.com" };
             _mockUserManager.Setup(m => m.FindByEmailAsync("u@example.com")).ReturnsAsync(user);
-            _mockUserManager
-                .Setup(m => m.CheckPasswordAsync(user, "wrongpass"))
-                .ReturnsAsync(false);
+            _mockSignInManager
+                .Setup(m => m.CheckPasswordSignInAsync(user, "wrongpass", true))
+                .ReturnsAsync(SignInResult.Failed);
 
             var result = await _controller.Login(new LoginInputDto
             {
@@ -406,6 +416,93 @@ namespace user_microservice.Tests
 
             var unauth = Assert.IsType<UnauthorizedObjectResult>(result.Result);
             Assert.Equal("Invalid email or password.", unauth.Value);
+        }
+
+        [Fact]
+        public async Task Login_Returns429_WhenAccountIsLockedOut()
+        {
+            SetupHttpContext(isAuthenticated: false);
+
+            var user = new AppUser { Id = "1", Email = "u@example.com" };
+            _mockUserManager.Setup(m => m.FindByEmailAsync("u@example.com")).ReturnsAsync(user);
+            _mockSignInManager
+                .Setup(m => m.CheckPasswordSignInAsync(user, "any", true))
+                .ReturnsAsync(SignInResult.LockedOut);
+
+            var result = await _controller.Login(new LoginInputDto { Email = "u@example.com", Password = "any" });
+
+            var status = Assert.IsType<ObjectResult>(result.Result);
+            Assert.Equal(StatusCodes.Status429TooManyRequests, status.StatusCode);
+            _mockTokenService.Verify(t => t.CreateToken(It.IsAny<AppUser>()), Times.Never);
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // POST /api/auth/changeBanStatus  –  hierarchia banów
+        // ─────────────────────────────────────────────────────────────
+
+        private void SetupCaller(string userId, string role)
+        {
+            var identity = new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, userId),
+                new Claim(ClaimTypes.Role, role)
+            }, "TestAuth");
+
+            _controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) }
+            };
+        }
+
+        private AppUser SetupTarget(string id, params string[] roles)
+        {
+            var target = new AppUser { Id = id };
+            _mockUserManager.Setup(m => m.FindByIdAsync(id)).ReturnsAsync(target);
+            _mockUserManager.Setup(m => m.GetRolesAsync(target)).ReturnsAsync(roles.ToList());
+            _mockUserManager.Setup(m => m.UpdateAsync(target)).ReturnsAsync(IdentityResult.Success);
+            return target;
+        }
+
+        [Fact]
+        public async Task ChangeBanStatus_ReturnsBadRequest_WhenBanningSelf()
+        {
+            SetupCaller("admin-1", "Admin");
+            SetupTarget("admin-1", "Admin");
+
+            var result = await _controller.ChangeUserBanStatus(new BanInputDto { UserId = "admin-1", ShouldBeBanned = true });
+
+            Assert.IsType<BadRequestObjectResult>(result.Result);
+        }
+
+        [Theory]
+        [InlineData("Moderator", "Admin")]
+        [InlineData("Admin", "Admin")]
+        [InlineData("Moderator", "Moderator")]
+        public async Task ChangeBanStatus_ReturnsForbid_WhenTargetOutranksCaller(string callerRole, string targetRole)
+        {
+            SetupCaller("caller", callerRole);
+            var target = SetupTarget("target", "User", targetRole);
+
+            var result = await _controller.ChangeUserBanStatus(new BanInputDto { UserId = "target", ShouldBeBanned = true });
+
+            Assert.IsType<ForbidResult>(result.Result);
+            Assert.False(target.IsBanned);
+            _mockUserManager.Verify(m => m.UpdateAsync(It.IsAny<AppUser>()), Times.Never);
+        }
+
+        [Theory]
+        [InlineData("Moderator", "User")]
+        [InlineData("Admin", "User")]
+        [InlineData("Admin", "Moderator")]
+        public async Task ChangeBanStatus_BansTarget_WhenCallerOutranksTarget(string callerRole, string targetRole)
+        {
+            SetupCaller("caller", callerRole);
+            var target = SetupTarget("target", "User", targetRole);
+
+            var result = await _controller.ChangeUserBanStatus(new BanInputDto { UserId = "target", ShouldBeBanned = true });
+
+            var ok = Assert.IsType<OkObjectResult>(result.Result);
+            Assert.True(Assert.IsType<BanResponseDto>(ok.Value).IsBanned);
         }
 
         [Fact]
@@ -419,7 +516,7 @@ namespace user_microservice.Tests
 
             // Mockowanie metod UserManager
             _mockUserManager.Setup(m => m.FindByEmailAsync("valid@example.com")).ReturnsAsync(user); // Sprawdzamy użytkownika po e-mailu
-            _mockUserManager.Setup(m => m.CheckPasswordAsync(user, "Passw0rd!")).ReturnsAsync(true); // Hasło jest poprawne
+            _mockSignInManager.Setup(m => m.CheckPasswordSignInAsync(user, "Passw0rd!", true)).ReturnsAsync(SignInResult.Success); // Hasło jest poprawne
             _mockUserManager
                 .Setup(m => m.GetRolesAsync(user))
                 .ReturnsAsync(new List<string> { "User" }); // Użytkownik ma rolę "User"

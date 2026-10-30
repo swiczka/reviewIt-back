@@ -84,7 +84,7 @@ namespace review_microservice.Controllers
             }
 
             var callerId = JwtUserClaims.GetUserId(User);
-            if (callerId == null || callerId != dto.AppUserId)
+            if (callerId == null)
             {
                 return Forbid();
             }
@@ -93,7 +93,7 @@ namespace review_microservice.Controllers
             {
                 Content = dto.Content,
                 CreatedDate = DateTime.UtcNow,
-                AppUserId = dto.AppUserId,
+                AppUserId = callerId,
                 ReviewId = dto.ReviewId
             };
 
