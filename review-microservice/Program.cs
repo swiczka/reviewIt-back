@@ -105,10 +105,7 @@ builder.Services.AddAuthorization(
     }
 );
 
-var corsOrigins = (builder.Configuration["Cors:AllowedOrigins"]
-    ?? builder.Configuration["Jwt:Audience"]
-    ?? "http://localhost:5173")
-    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 
 builder.Services.AddCors(options =>
 {

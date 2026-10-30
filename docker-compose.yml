@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -31,8 +29,6 @@ services:
     environment:
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=reviewit;Username=postgres;Password=${POSTGRES_PASSWORD:?No POSTGRES_PASSWORD provided}
       - Jwt__Key=${JWT_KEY}
-      - Jwt__Issuer=http://auth-api:5000
-      - Jwt__Audience=http://review-api:5001
       - ALLOWEDHOSTS=localhost;auth-api;review-api
       - ASPNETCORE_URLS=http://+:8080
     networks:
@@ -50,8 +46,6 @@ services:
     environment:
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=reviewit;Username=postgres;Password=${POSTGRES_PASSWORD:?No POSTGRES_PASSWORD provided}
       - Jwt__Key=${JWT_KEY}
-      - Jwt__Issuer=http://auth-api:5000
-      - Jwt__Audience=http://review-api:5001
       - ALLOWEDHOSTS=localhost;auth-api;review-api
       - ASPNETCORE_URLS=http://+:8080
     networks:
